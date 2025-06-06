@@ -1,0 +1,10 @@
+Este archivo es un marcador de posición para que sepas dónde colocar las imágenes de los servicios.
+
+Deberías añadir las siguientes imágenes:
+1. fisioterapia-deportiva.jpg
+2. rehabilitacion-neurologica.jpg
+3. terapia-manual.jpg
+4. fisioterapia-geriatrica.jpg
+5. masaje-terapeutico.jpg
+
+Estas imágenes deben ser fotografías profesionales que representen cada servicio.
