@@ -7,6 +7,8 @@ import { Calendar, Clock, Users, Stethoscope, CalendarCheck, ArrowUpRight } from
 import Link from 'next/link';
 import axios from 'axios';
 import { TodayAppointments } from '@/components/dashboard/therapist/TodayAppointments';
+import WeeklyCalendar from '@/components/calendar/WeeklyCalendar';
+import { useRouter } from 'next/navigation';
 
 interface DashboardStats {
   appointmentsToday: number;
@@ -33,6 +35,7 @@ interface PopularService {
 
 export default function DashboardPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const isAdmin = session?.user?.role === 'ADMIN';
   const isTherapist = session?.user?.role === 'THERAPIST';
   const [stats, setStats] = useState<DashboardStats>({
@@ -44,6 +47,7 @@ export default function DashboardPage() {
   const [recentAppointments, setRecentAppointments] = useState<RecentAppointment[]>([]);
   const [popularServices, setPopularServices] = useState<PopularService[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showFullCalendar, setShowFullCalendar] = useState(false);
 
   useEffect(() => {
     // Solo cargar datos del dashboard de administrador si el usuario es administrador
@@ -98,6 +102,14 @@ export default function DashboardPage() {
       month: 'short',
     }).format(date);
   };
+  
+  const handleAppointmentClick = (appointment: any) => {
+    router.push(`/dashboard/appointments/${appointment.id}`);
+  };
+  
+  const toggleCalendarView = () => {
+    setShowFullCalendar(!showFullCalendar);
+  };
 
   return (
     <div className="space-y-6">
@@ -115,55 +127,81 @@ export default function DashboardPage() {
         </p>
       </div>
       
-      {/* Panel específico para fisioterapeutas */}
-      {isTherapist && (
+      {/* Panel específico para administradores o fisioterapeutas */}
+      {(isAdmin || isTherapist) && (
         <div className="space-y-6">
-          {/* Citas del día para el fisioterapeuta */}
-          <TodayAppointments />
+          {/* Calendario semanal */}
+          <Card className="col-span-full">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-lg">Calendario Semanal</CardTitle>
+                <CardDescription>
+                  Vista general de las citas programadas esta semana
+                </CardDescription>
+              </div>
+              <button 
+                onClick={toggleCalendarView}
+                className="px-4 py-2 text-sm bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">
+                {showFullCalendar ? 'Vista compacta' : 'Vista completa'}
+              </button>
+            </CardHeader>
+            <CardContent className={showFullCalendar ? "" : "max-h-[500px] overflow-y-auto"}>              
+              <WeeklyCalendar 
+                therapistId={isTherapist ? session?.user?.id : undefined} 
+                onAppointmentClick={handleAppointmentClick}
+              />
+            </CardContent>
+          </Card>
           
-          <div className="grid gap-4 md:grid-cols-2">
-            {/* Próximas citas */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Próximas Citas</CardTitle>
-                <CardDescription>Citas programadas para los próximos días</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-center py-4">
-                  <Link href="/dashboard/appointments" className="text-primary hover:underline inline-flex items-center">
-                    Ver todas mis citas
-                    <ArrowUpRight className="ml-1 h-3 w-3" />
+          {/* Citas del día para el fisioterapeuta */}
+          {isTherapist && <TodayAppointments />}
+          
+          {/* Componentes exclusivos para fisioterapeutas */}
+          {isTherapist && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Próximas citas */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Próximas Citas</CardTitle>
+                  <CardDescription>Citas programadas para los próximos días</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-center py-4">
+                    <Link href="/dashboard/appointments" className="text-primary hover:underline inline-flex items-center">
+                      Ver todas mis citas
+                      <ArrowUpRight className="ml-1 h-3 w-3" />
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* Accesos rápidos */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Accesos Rápidos</CardTitle>
+                  <CardDescription>Acciones comunes para fisioterapeutas</CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-3">
+                  <Link href="/dashboard/appointments" className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-50 transition-colors">
+                    <Calendar className="h-6 w-6 mb-2 text-primary" />
+                    <span className="text-sm font-medium">Citas</span>
                   </Link>
-                </div>
-              </CardContent>
-            </Card>
-            
-            {/* Accesos rápidos */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Accesos Rápidos</CardTitle>
-                <CardDescription>Acciones comunes para fisioterapeutas</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3">
-                <Link href="/dashboard/appointments" className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-50 transition-colors">
-                  <Calendar className="h-6 w-6 mb-2 text-primary" />
-                  <span className="text-sm font-medium">Citas</span>
-                </Link>
-                <Link href="/dashboard/patients" className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-50 transition-colors">
-                  <Users className="h-6 w-6 mb-2 text-primary" />
-                  <span className="text-sm font-medium">Pacientes</span>
-                </Link>
-                <Link href="/dashboard/schedules" className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-50 transition-colors">
-                  <Clock className="h-6 w-6 mb-2 text-primary" />
-                  <span className="text-sm font-medium">Horarios</span>
-                </Link>
-                <Link href="/dashboard/profile" className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-50 transition-colors">
-                  <Stethoscope className="h-6 w-6 mb-2 text-primary" />
-                  <span className="text-sm font-medium">Mi Perfil</span>
-                </Link>
-              </CardContent>
-            </Card>
-          </div>
+                  <Link href="/dashboard/patients" className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-50 transition-colors">
+                    <Users className="h-6 w-6 mb-2 text-primary" />
+                    <span className="text-sm font-medium">Pacientes</span>
+                  </Link>
+                  <Link href="/dashboard/schedules" className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-50 transition-colors">
+                    <Clock className="h-6 w-6 mb-2 text-primary" />
+                    <span className="text-sm font-medium">Horarios</span>
+                  </Link>
+                  <Link href="/dashboard/profile" className="flex flex-col items-center p-4 border rounded-md hover:bg-gray-50 transition-colors">
+                    <Stethoscope className="h-6 w-6 mb-2 text-primary" />
+                    <span className="text-sm font-medium">Mi Perfil</span>
+                  </Link>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
       )}
       

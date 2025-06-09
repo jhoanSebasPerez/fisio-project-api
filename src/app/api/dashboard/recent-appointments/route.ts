@@ -46,7 +46,7 @@ export async function GET(request: Request) {
 
     // Obtener la fecha actual
     const now = new Date();
-    
+
     // Construir la consulta base
     let query: any = {
       where: {

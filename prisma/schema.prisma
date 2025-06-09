@@ -9,21 +9,22 @@ datasource db {
 }
 
 model User {
-  id                    String             @id @default(uuid())
+  id                    String                @id @default(uuid())
   name                  String
-  email                 String             @unique
+  email                 String                @unique
   hashedPassword        String?
   phone                 String?
-  role                  Role               @default(PATIENT)
-  active                Boolean            @default(true)
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
-  patientAppointments   Appointment[]      @relation("PatientAppointments")
-  therapistAppointments Appointment[]      @relation("TherapistAppointments")
+  role                  Role                  @default(PATIENT)
+  active                Boolean               @default(true)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  patientAppointments   Appointment[]         @relation("PatientAppointments")
+  therapistAppointments Appointment[]         @relation("TherapistAppointments")
   Schedule              Schedule[]
   surveyResponses       SurveyResponse[]
   therapistNotes        TherapistNote[]
   therapistServices     TherapistService[]
+  activityLogs          AppointmentActivityLog[]
 }
 
 model Service {
@@ -53,18 +54,19 @@ model TherapistService {
 }
 
 model Appointment {
-  id                  String               @id @default(uuid())
+  id                  String                 @id @default(uuid())
   patientId           String
   therapistId         String?
   date                DateTime
-  status              AppointmentStatus    @default(SCHEDULED)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  patient             User                 @relation("PatientAppointments", fields: [patientId], references: [id], onDelete: Cascade)
-  therapist           User?                @relation("TherapistAppointments", fields: [therapistId], references: [id])
+  status              AppointmentStatus      @default(SCHEDULED)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  patient             User                   @relation("PatientAppointments", fields: [patientId], references: [id], onDelete: Cascade)
+  therapist           User?                  @relation("TherapistAppointments", fields: [therapistId], references: [id])
   appointmentServices AppointmentService[]
   surveyResponses     SurveyResponse[]
   therapistNotes      TherapistNote[]
+  activityLogs        AppointmentActivityLog[]
 }
 
 model AppointmentService {
@@ -139,4 +141,31 @@ enum DayOfWeek {
   FRIDAY
   SATURDAY
   SUNDAY
+}
+
+model Setting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AppointmentActivityLog {
+  id             String           @id @default(uuid())
+  appointmentId  String
+  userId         String?
+  action         String           // CONFIRMED, RESCHEDULED, CANCELLED, etc.
+  previousStatus AppointmentStatus?
+  newStatus      AppointmentStatus
+  previousDate   DateTime?
+  newDate        DateTime?
+  metadata       Json?            // Para almacenar información adicional
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime         @default(now())
+  
+  // Relaciones
+  appointment    Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
 }

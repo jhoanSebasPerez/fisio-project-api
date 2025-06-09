@@ -58,16 +58,22 @@ interface Appointment {
 
 export default function AppointmentsPage() {
   const { data: session } = useSession();
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({
+  const isAdmin = session?.user?.role === 'ADMIN';
+  const isTherapist = session?.user?.role === 'THERAPIST';
+  
+  // Si es fisioterapeuta, preestablecemos el filtro con su ID
+  const initialFilters = {
     startDate: null as Date | null,
     endDate: null as Date | null,
     status: '',
-    therapistId: '',
+    therapistId: isTherapist ? session?.user?.id || '' : '',
     patientName: '',
-  });
+  };
+  
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState(initialFilters);
   const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -77,7 +83,12 @@ export default function AppointmentsPage() {
     const fetchAppointments = async () => {
       try {
         setLoading(true);
-        const response = await axios.get('/api/appointments');
+        // Si es fisioterapeuta, solo mostrar sus citas
+        const url = isTherapist ? 
+          `/api/appointments?therapistId=${session?.user?.id}` : 
+          '/api/appointments';
+          
+        const response = await axios.get(url);
         setAppointments(response.data);
         setFilteredAppointments(response.data);
       } catch (error) {
@@ -145,17 +156,28 @@ export default function AppointmentsPage() {
 
   // Manejadores de eventos
   const handleFilterChange = (newFilters: any) => {
-    setFilters({ ...filters, ...newFilters });
+    // Si es fisioterapeuta, mantener su ID en los filtros
+    if (isTherapist) {
+      setFilters({ 
+        ...filters, 
+        ...newFilters,
+        therapistId: session?.user?.id || ''
+      });
+    } else {
+      setFilters({ ...filters, ...newFilters });
+    }
   };
 
   const handleClearFilters = () => {
-    setFilters({
+    const clearedFilters = {
       startDate: null,
       endDate: null,
       status: '',
-      therapistId: '',
+      // Si es fisioterapeuta, mantener su ID en los filtros
+      therapistId: isTherapist ? session?.user?.id || '' : '',
       patientName: '',
-    });
+    };
+    setFilters(clearedFilters);
   };
 
   const handleViewDetails = (appointment: Appointment) => {
@@ -212,7 +234,9 @@ export default function AppointmentsPage() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold tracking-tight">Gestión de Citas</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {isAdmin ? 'Gestión de Citas' : 'Mis Citas'}
+        </h1>
         <Button variant="outline" onClick={handleClearFilters} className="gap-2">
           <Filter className="h-4 w-4" />
           Limpiar filtros
@@ -223,6 +247,7 @@ export default function AppointmentsPage() {
         filters={filters}
         onFilterChange={handleFilterChange}
         therapists={therapists}
+        isAdmin={isAdmin}
       />
 
       <Card>
@@ -234,7 +259,9 @@ export default function AppointmentsPage() {
             </Badge>
           </CardTitle>
           <CardDescription>
-            Vista completa de todas las citas agendadas en el sistema
+            {isAdmin 
+              ? 'Vista completa de todas las citas agendadas en el sistema' 
+              : 'Vista de citas asignadas a tu agenda'}
           </CardDescription>
         </CardHeader>
         <CardContent>

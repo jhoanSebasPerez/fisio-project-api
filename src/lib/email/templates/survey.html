@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Encuesta de Satisfacción - Fisioterapia</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background-color: #f9f9f9;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #ffffff;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #eee;
+    }
+    .header h1 {
+      color: #2563EB;
+      margin: 0;
+      font-size: 24px;
+    }
+    .content {
+      padding: 20px 0;
+    }
+    .appointment-details {
+      background-color: #f5f7ff;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+    .appointment-details p {
+      margin: 5px 0;
+    }
+    .details-label {
+      font-weight: bold;
+      color: #555;
+    }
+    .button {
+      display: inline-block;
+      padding: 12px 24px;
+      background-color: #2563EB;
+      color: #ffffff !important;
+      text-decoration: none;
+      border-radius: 4px;
+      text-align: center;
+      font-weight: bold;
+      margin: 20px 0;
+    }
+    .button:hover {
+      background-color: #1d4ed8;
+    }
+    .footer {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+    }
+    .stars {
+      font-size: 24px;
+      color: #facc15;
+      letter-spacing: 4px;
+      margin: 10px 0;
+    }
+    @media only screen and (max-width: 600px) {
+      .container {
+        width: 100%;
+        border-radius: 0;
+      }
+      .button {
+        display: block;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Centro de Fisioterapia</h1>
+    </div>
+    
+    <div class="content">
+      <h2>Hola {{patientName}},</h2>
+      
+      <p>¡Gracias por su visita! Esperamos que se encuentre mejor después de su sesión de fisioterapia.</p>
+      
+      <p>Valoramos mucho su opinión y nos ayuda a mejorar nuestros servicios. ¿Podría tomarse un momento para completar una breve encuesta sobre su experiencia?</p>
+      
+      <div class="appointment-details">
+        <p><span class="details-label">Fecha de la cita:</span> {{appointmentDate}}</p>
+        <p><span class="details-label">Servicio:</span> {{service}}</p>
+        <p><span class="details-label">Terapeuta:</span> {{therapistName}}</p>
+      </div>
+      
+      <p>Su opinión nos ayudará a seguir mejorando y brindar la mejor atención posible a todos nuestros pacientes.</p>
+      
+      <div style="text-align: center;">
+        <div class="stars">★★★★★</div>
+        <a href="{{surveyUrl}}" class="button">Completar encuesta de satisfacción</a>
+      </div>
+      
+      <p>La encuesta solo tomará un minuto de su tiempo y sus comentarios son completamente confidenciales.</p>
+      
+      <p>Si tiene alguna pregunta o comentario adicional, no dude en contactarnos.</p>
+      
+      <p>¡Gracias por confiar en nosotros para su cuidado!</p>
+      
+      <p>Saludos cordiales,<br>
+      El equipo de Centro de Fisioterapia</p>
+    </div>
+    
+    <div class="footer">
+      <p>Este correo electrónico fue enviado a {{patientEmail}}.</p>
+      <p>© {{currentYear}} Centro de Fisioterapia. Todos los derechos reservados.</p>
+    </div>
+  </div>
+</body>
+</html>

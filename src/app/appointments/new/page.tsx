@@ -409,8 +409,14 @@ export default function NewAppointmentPage() {
                               selected={field.value}
                               onSelect={field.onChange}
                               disabled={(date: any) => {
-                                const today = new Date(); today.setHours(0, 0, 0, 0);
-                                return date < today || date.getDay() === 0;
+                                // Obtener la fecha actual en Colombia (GMT-5)
+                                const now = new Date();
+                                
+                                // Crear la fecha de hoy en Colombia con hora 00:00:00
+                                const todayColombia = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+                                
+                                // Deshabilitar domingos y días pasados, pero permitir el día actual
+                                return (date < todayColombia && date.getTime() !== todayColombia.getTime()) || date.getDay() === 0;
                               }}
                               locale={es}
                             />

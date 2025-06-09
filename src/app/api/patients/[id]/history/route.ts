@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { Session } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { logMedicalAccess, isTherapistAuthorizedForPatient } from '@/lib/audit';
+import { decryptMedicalData } from '@/lib/medicalDataSecurity';
 
 // Extender el tipo Session para incluir los campos personalizados
 interface ExtendedSession extends Session {
@@ -23,19 +25,39 @@ export async function GET(
   try {
     const patientId = params.id;
     const session = await getServerSession(authOptions) as ExtendedSession | null;
+    const accessAttemptTimestamp = new Date().toISOString();
 
     // Verificar autenticación
     if (!session) {
+      // Registrar intento de acceso anónimo (posible brecha de seguridad)
+      console.log(`UNAUTHORIZED_MEDICAL_ACCESS_ATTEMPT: Anonymous user tried to access patient history for patient ${patientId} at ${accessAttemptTimestamp}`);
+      
       return NextResponse.json(
         { error: 'No autorizado' },
         { status: 401 }
       );
     }
 
-    // Verificar que el rol es ADMIN o THERAPIST
-    if (session.user.role !== 'ADMIN' && session.user.role !== 'THERAPIST') {
+    // Verificar que el rol es ADMIN, THERAPIST o el propio PACIENTE
+    const isOwnHistory = session.user.role === 'PATIENT' && session.user.id === patientId;
+    const isAuthorizedRole = session.user.role === 'ADMIN' || session.user.role === 'THERAPIST';
+    
+    if (!isAuthorizedRole && !isOwnHistory) {
+      // Registrar intento de acceso no autorizado
+      logMedicalAccess({
+        userId: session.user.id,
+        accessType: 'view',
+        resourceType: 'patient_history',
+        resourceId: patientId,
+        details: { 
+          error: 'Intento de acceso no autorizado por rol', 
+          role: session.user.role,
+          timestamp: accessAttemptTimestamp
+        }
+      });
+      
       return NextResponse.json(
-        { error: 'No tiene permisos para realizar esta acción' },
+        { error: 'No tiene permisos para acceder a información médica confidencial' },
         { status: 403 }
       );
     }
@@ -60,6 +82,33 @@ export async function GET(
         { error: 'Paciente no encontrado' },
         { status: 404 }
       );
+    }
+    
+    // Si es terapeuta, verificar que está autorizado para ver este paciente
+    if (session.user.role === 'THERAPIST') {
+      const isTherapistAuthorized = await isTherapistAuthorizedForPatient(
+        session.user.id,
+        patientId
+      );
+      
+      if (!isTherapistAuthorized) {
+        // Registrar intento de acceso de terapeuta no autorizado
+        logMedicalAccess({
+          userId: session.user.id,
+          accessType: 'view',
+          resourceType: 'patient_history',
+          resourceId: patientId,
+          details: { 
+            error: 'Terapeuta no autorizado para este paciente',
+            patientName: patient.name
+          }
+        });
+        
+        return NextResponse.json(
+          { error: 'No tiene autorización para acceder al historial de este paciente' },
+          { status: 403 }
+        );
+      }
     }
 
     // Obtener todas las citas anteriores del paciente, ordenadas por fecha descendente
@@ -102,10 +151,36 @@ export async function GET(
         }
       }
     });
+    
+    // Procesar las notas encriptadas si existen
+    const processedAppointments = appointments.map(appointment => {
+      // Clonar el objeto para no modificar el original
+      const processedAppointment = { ...appointment };
+      
+      // Descifrar las notas médicas si están cifradas
+      if (processedAppointment.therapistNotes && processedAppointment.therapistNotes.length > 0) {
+        processedAppointment.therapistNotes = processedAppointment.therapistNotes.map(note => {
+          // Verificar si la nota está potencialmente cifrada
+          if (typeof note.content === 'string' && note.content.includes(':')) {
+            try {
+              // Intentar descifrar el contenido
+              const decryptedContent = decryptMedicalData(note.content);
+              return { ...note, content: decryptedContent };
+            } catch (error) {
+              console.error('Error decrypting note:', error);
+              return note; // Devolver la nota original si falla el descifrado
+            }
+          }
+          return note;
+        });
+      }
+      
+      return processedAppointment;
+    });
 
     // Calcular estadísticas
-    const totalAppointments = appointments.length;
-    const servicesReceived = appointments.reduce((acc, appointment) => {
+    const totalAppointments = processedAppointments.length;
+    const servicesReceived = processedAppointments.reduce((acc, appointment) => {
       appointment.appointmentServices.forEach(as => {
         if (as.service) {
           const serviceName = as.service.name;
@@ -114,6 +189,19 @@ export async function GET(
       });
       return acc;
     }, {} as Record<string, number>);
+    
+    // Registrar acceso exitoso al historial médico
+    logMedicalAccess({
+      userId: session.user.id,
+      accessType: 'view',
+      resourceType: 'patient_history',
+      resourceId: patientId,
+      details: { 
+        patientName: patient.name,
+        appointmentCount: totalAppointments,
+        role: session.user.role
+      }
+    });
 
     // Construir la respuesta
     const patientHistory = {
@@ -121,13 +209,20 @@ export async function GET(
       statistics: {
         totalAppointments,
         servicesReceived,
-        firstVisit: totalAppointments > 0 ? appointments[appointments.length - 1].date : null,
-        lastVisit: totalAppointments > 0 ? appointments[0].date : null
+        firstVisit: totalAppointments > 0 ? processedAppointments[processedAppointments.length - 1].date : null,
+        lastVisit: totalAppointments > 0 ? processedAppointments[0].date : null
       },
-      appointments: appointments
+      appointments: processedAppointments
     };
+    
+    // Añadir encabezados de seguridad para proteger la información médica
+    const headers = new Headers();
+    headers.append('Cache-Control', 'no-store, no-cache, must-revalidate');
+    headers.append('Pragma', 'no-cache');
+    headers.append('X-Content-Type-Options', 'nosniff');
+    headers.append('X-Medical-Data-Access', 'restricted');
 
-    return NextResponse.json(patientHistory);
+    return NextResponse.json(patientHistory, { headers });
     
   } catch (error) {
     console.error('GET_PATIENT_HISTORY_ERROR', error);

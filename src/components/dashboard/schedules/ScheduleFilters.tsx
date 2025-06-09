@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { DayOfWeek, dayOfWeekLabels, ScheduleFilters } from '@/types/schedule';
 import { toast } from '@/components/ui/use-toast';
 import { Filter, X } from 'lucide-react';
@@ -23,6 +24,10 @@ export default function ScheduleFiltersComponent({
   onFilterChange,
   initialFilters = {},
 }: ScheduleFiltersProps) {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === 'ADMIN';
+  const currentUserId = session?.user?.id;
+  
   const [filters, setFilters] = useState<ScheduleFilters>(initialFilters);
   const [therapistOptions, setTherapistOptions] = useState<TherapistOption[]>([]);
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
@@ -33,15 +38,17 @@ export default function ScheduleFiltersComponent({
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Cargar fisioterapeutas
-        const therapistsResponse = await fetch('/api/therapists');
-        if (!therapistsResponse.ok) {
-          throw new Error('Error al cargar los fisioterapeutas');
+        // Solo cargar fisioterapeutas si es administrador
+        if (isAdmin) {
+          const therapistsResponse = await fetch('/api/therapists');
+          if (!therapistsResponse.ok) {
+            throw new Error('Error al cargar los fisioterapeutas');
+          }
+          const therapistsData = await therapistsResponse.json();
+          setTherapistOptions(therapistsData);
         }
-        const therapistsData = await therapistsResponse.json();
-        setTherapistOptions(therapistsData);
         
-        // Cargar servicios activos
+        // Cargar servicios activos (para todos los roles)
         const servicesResponse = await fetch('/api/services?activeOnly=true');
         if (!servicesResponse.ok) {
           throw new Error('Error al cargar los servicios');
@@ -61,7 +68,9 @@ export default function ScheduleFiltersComponent({
     };
 
     fetchData();
-  }, []);
+    
+    // Note: El filtrado por terapeuta ahora se hace directamente en el componente padre
+  }, [isAdmin]);
 
   const handleTherapistChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const therapistId = event.target.value || undefined;
@@ -95,26 +104,30 @@ export default function ScheduleFiltersComponent({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Fisioterapeuta
-          </label>
-          <select
-            value={filters.therapistId || ''}
-            onChange={handleTherapistChange}
-            className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-            disabled={isLoading}
-          >
-            <option value="">Todos los fisioterapeutas</option>
-            {therapistOptions.map((therapist) => (
-              <option key={therapist.id} value={therapist.id}>
-                {therapist.name}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
+        {/* Filtro de fisioterapeuta (solo para administradores) */}
+        {isAdmin && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Fisioterapeuta
+            </label>
+            <select
+              value={filters.therapistId || ''}
+              onChange={handleTherapistChange}
+              className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              disabled={isLoading}
+            >
+              <option value="">Todos los fisioterapeutas</option>
+              {therapistOptions.map((therapist) => (
+                <option key={therapist.id} value={therapist.id}>
+                  {therapist.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
+        {/* Filtro de servicio (para todos) */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Servicio
@@ -134,6 +147,7 @@ export default function ScheduleFiltersComponent({
           </select>
         </div>
 
+        {/* Filtro de día de la semana (para todos) */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Día de la semana

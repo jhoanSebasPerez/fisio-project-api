@@ -73,7 +73,7 @@ export async function GET(request: Request) {
       ]);
     } else if (session.user.role === 'THERAPIST') {
       // Fisioterapeutas ven solo sus citas
-      [appointmentsToday, upcomingAppointments, totalPatients] = await Promise.all([
+      [appointmentsToday, upcomingAppointments] = await Promise.all([
         // Citas para hoy de este terapeuta
         prisma.appointment.count({
           where: {
@@ -96,14 +96,19 @@ export async function GET(request: Request) {
             }
           },
         }),
-        // Total de pacientes atendidos por este terapeuta
-        prisma.appointment.count({
-          where: {
-            therapistId: session.user.id
-          },
-          distinct: ['patientId']
-        }),
       ]);
+
+      // Total de pacientes atendidos por este terapeuta (con distinct)
+      const distinctPatients = await prisma.appointment.findMany({
+        where: {
+          therapistId: session.user.id
+        },
+        distinct: ['patientId'],
+        select: {
+          patientId: true
+        }
+      });
+      totalPatients = distinctPatients.length;
     } else {
       // Pacientes ven solo sus citas
       [appointmentsToday, upcomingAppointments] = await Promise.all([

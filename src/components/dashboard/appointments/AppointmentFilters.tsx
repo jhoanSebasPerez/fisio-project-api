@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import {
   Card,
   CardContent
@@ -44,17 +45,21 @@ interface AppointmentFiltersProps {
   };
   onFilterChange: (filters: any) => void;
   therapists: Therapist[];
+  isAdmin?: boolean;
 }
 
 export function AppointmentFilters({
   filters,
   onFilterChange,
-  therapists
+  therapists,
+  isAdmin = false
 }: AppointmentFiltersProps) {
+  const { data: session } = useSession();
+  const userIsAdmin = isAdmin || session?.user?.role === 'ADMIN';
 
   return (
     <div className="mb-6 p-4 bg-gray-100 rounded-lg shadow">
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+      <div className={`grid grid-cols-1 ${userIsAdmin ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 items-end`}>
           {/* Filtro por fecha de inicio */}
           <div>
             <label htmlFor="startDateFilter" className="block text-sm font-medium text-gray-700">Fecha inicio</label>
@@ -138,23 +143,25 @@ export function AppointmentFilters({
             </select>
           </div>
 
-          {/* Filtro por terapeuta */}
-          <div>
-            <label htmlFor="therapistFilter" className="block text-sm font-medium text-gray-700">Terapeuta</label>
-            <select
-              id="therapistFilter"
-              value={filters.therapistId}
-              onChange={(e) => onFilterChange({ therapistId: e.target.value })}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="">Todos los terapeutas</option>
-              {therapists.map((therapist) => (
-                <option key={therapist.id} value={therapist.id}>
-                  {therapist.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Filtro por terapeuta (solo para administradores) */}
+          {userIsAdmin && (
+            <div>
+              <label htmlFor="therapistFilter" className="block text-sm font-medium text-gray-700">Terapeuta</label>
+              <select
+                id="therapistFilter"
+                value={filters.therapistId}
+                onChange={(e) => onFilterChange({ therapistId: e.target.value })}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              >
+                <option value="">Todos los terapeutas</option>
+                {therapists.map((therapist) => (
+                  <option key={therapist.id} value={therapist.id}>
+                    {therapist.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Búsqueda por nombre de paciente */}
           <div>

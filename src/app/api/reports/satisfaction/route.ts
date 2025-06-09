@@ -52,8 +52,8 @@ export async function GET(request: Request) {
       whereClause.appointment.therapistId = therapistId;
     }
 
-    // Obtener todas las reseñas en el período
-    const reviews = await prisma.review.findMany({
+    // Obtener todas las encuestas en el período
+    const surveyResponses = await prisma.surveyResponse.findMany({
       where: whereClause,
       include: {
         appointment: {
@@ -72,25 +72,21 @@ export async function GET(request: Request) {
     });
 
     // Calcular promedios de satisfacción
-    const overall = calculateOverallSatisfaction(reviews);
+    const overall = calculateOverallSatisfaction(surveyResponses);
     
     // Obtener satisfacción por terapeuta
-    const therapists = await calculateSatisfactionByTherapist(reviews, startDate, endDate);
+    const therapists = await calculateSatisfactionByTherapist(surveyResponses, startDate, endDate);
     
     // Calcular evolución temporal de satisfacción
-    const trend = calculateSatisfactionTrend(reviews);
-
-    // Calcular métricas de respuestas por categoría
-    const categories = calculateCategoryMetrics(reviews);
+    const trend = calculateSatisfactionTrend(surveyResponses);
 
     return NextResponse.json({
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
-      reviewsCount: reviews.length,
+      surveysCount: surveyResponses.length,
       overall,
       therapists,
-      trend,
-      categories
+      trend
     });
   } catch (error) {
     console.error('SATISFACTION_REPORT_ERROR', error);
@@ -102,27 +98,27 @@ export async function GET(request: Request) {
 }
 
 // Calcular satisfacción general
-function calculateOverallSatisfaction(reviews: any[]) {
-  if (reviews.length === 0) {
+function calculateOverallSatisfaction(surveys: any[]) {
+  if (surveys.length === 0) {
     return {
       average: 0,
       distribution: [0, 0, 0, 0, 0] // Distribución por 1, 2, 3, 4, 5 estrellas
     };
   }
 
-  const sum = reviews.reduce((total, review) => total + review.rating, 0);
-  const average = sum / reviews.length;
+  const sum = surveys.reduce((total, survey) => total + survey.satisfaction, 0);
+  const average = sum / surveys.length;
   
   // Calcular distribución de calificaciones (1-5 estrellas)
   const distribution = [0, 0, 0, 0, 0];
-  reviews.forEach(review => {
-    const rating = Math.max(1, Math.min(5, review.rating));
+  surveys.forEach(survey => {
+    const rating = Math.max(1, Math.min(5, survey.satisfaction));
     distribution[rating - 1]++;
   });
   
   // Convertir a porcentajes
   const percentages = distribution.map(count => 
-    Math.round((count / reviews.length) * 100 * 100) / 100
+    Math.round((count / surveys.length) * 100 * 100) / 100
   );
   
   return {
@@ -132,12 +128,12 @@ function calculateOverallSatisfaction(reviews: any[]) {
 }
 
 // Calcular satisfacción por terapeuta
-async function calculateSatisfactionByTherapist(reviews: any[], startDate: Date, endDate: Date) {
+async function calculateSatisfactionByTherapist(surveys: any[], startDate: Date, endDate: Date) {
   // Obtener todos los terapeutas que han tenido citas en el período
   const therapists = await prisma.user.findMany({
     where: {
       role: 'THERAPIST',
-      appointments: {
+      therapistAppointments: {
         some: {
           date: {
             gte: startDate,
@@ -150,7 +146,7 @@ async function calculateSatisfactionByTherapist(reviews: any[], startDate: Date,
     select: {
       id: true,
       name: true,
-      appointments: {
+      therapistAppointments: {
         where: {
           date: {
             gte: startDate,
@@ -167,100 +163,63 @@ async function calculateSatisfactionByTherapist(reviews: any[], startDate: Date,
 
   // Para cada terapeuta, calcular métricas de satisfacción
   return therapists.map(therapist => {
-    // Filtrar reseñas por terapeuta
-    const therapistReviews = reviews.filter(
-      r => r.appointment.therapist.id === therapist.id
+    // Filtrar encuestas por terapeuta
+    const therapistSurveys = surveys.filter(
+      s => s.appointment.therapist?.id === therapist.id
     );
     
     // Obtener total de citas completadas
-    const completedAppointments = therapist.appointments.length;
+    const completedAppointments = therapist.therapistAppointments.length;
     
-    // Citas con reseñas
-    const reviewedAppointments = therapistReviews.length;
+    // Citas con encuestas
+    const surveyedAppointments = therapistSurveys.length;
     
-    // Calcular satisfacción si hay reseñas
+    // Calcular satisfacción si hay encuestas
     let satisfactionRate = 0;
-    if (reviewedAppointments > 0) {
-      const sum = therapistReviews.reduce((total, r) => total + r.rating, 0);
-      satisfactionRate = sum / reviewedAppointments;
+    if (surveyedAppointments > 0) {
+      const sum = therapistSurveys.reduce((total, s) => total + s.satisfaction, 0);
+      satisfactionRate = sum / surveyedAppointments;
     }
     
     return {
       id: therapist.id,
       name: therapist.name,
       completedAppointments,
-      reviewedAppointments,
-      reviewRate: completedAppointments > 0 
-        ? Math.round((reviewedAppointments / completedAppointments) * 100 * 100) / 100 
+      surveyedAppointments,
+      surveyRate: completedAppointments > 0 
+        ? Math.round((surveyedAppointments / completedAppointments) * 100 * 100) / 100 
         : 0,
       satisfactionRate: Math.round(satisfactionRate * 100) / 100
     };
-  }).sort((a, b) => b.satisfactionRate - a.satisfactionRate);
+  }).sort((a, b) => b.satisfactionRate - a.satisfactionRate);  // Ordenar de mayor a menor satisfacción
 }
 
 // Calcular evolución temporal de satisfacción
-function calculateSatisfactionTrend(reviews: any[]) {
+function calculateSatisfactionTrend(surveys: any[]) {
   // Agrupar por mes
   const byMonth: Record<string, any[]> = {};
   
-  reviews.forEach(review => {
-    const date = new Date(review.appointment.date);
+  surveys.forEach(survey => {
+    const date = new Date(survey.appointment.date);
     const key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
     
     if (!byMonth[key]) {
       byMonth[key] = [];
     }
-    byMonth[key].push(review);
+    byMonth[key].push(survey);
   });
   
   // Calcular promedio por mes
   return Object.entries(byMonth)
-    .map(([month, monthReviews]) => {
-      const sum = monthReviews.reduce((total, r) => total + r.rating, 0);
+    .map(([month, monthSurveys]) => {
+      const sum = monthSurveys.reduce((total, s) => total + s.satisfaction, 0);
       return {
         month,
-        average: Math.round((sum / monthReviews.length) * 100) / 100,
-        count: monthReviews.length
+        average: Math.round((sum / monthSurveys.length) * 100) / 100,
+        count: monthSurveys.length
       };
     })
     .sort((a, b) => a.month.localeCompare(b.month)); // Ordenar cronológicamente
 }
 
-// Calcular métricas por categoría
-function calculateCategoryMetrics(reviews: any[]) {
-  // Suponiendo que hay campos en las reseñas para diferentes categorías
-  // Por ejemplo: atención (professionalism), efectividad (effectiveness), 
-  // instalaciones (facilities), y puntualidad (punctuality)
-  
-  if (reviews.length === 0) {
-    return {
-      professionalism: 0,
-      effectiveness: 0,
-      facilities: 0,
-      punctuality: 0
-    };
-  }
-  
-  let professionalism = 0;
-  let effectiveness = 0;
-  let facilities = 0;
-  let punctuality = 0;
-  let count = 0;
-  
-  reviews.forEach(review => {
-    // Sumar valores por categoría (si existen los campos en la reseña)
-    if (review.professionalismRating) professionalism += review.professionalismRating;
-    if (review.effectivenessRating) effectiveness += review.effectivenessRating;
-    if (review.facilitiesRating) facilities += review.facilitiesRating;
-    if (review.punctualityRating) punctuality += review.punctualityRating;
-    count++;
-  });
-  
-  // Calcular promedios
-  return {
-    professionalism: count > 0 ? Math.round((professionalism / count) * 100) / 100 : 0,
-    effectiveness: count > 0 ? Math.round((effectiveness / count) * 100) / 100 : 0,
-    facilities: count > 0 ? Math.round((facilities / count) * 100) / 100 : 0,
-    punctuality: count > 0 ? Math.round((punctuality / count) * 100) / 100 : 0
-  };
-}
+

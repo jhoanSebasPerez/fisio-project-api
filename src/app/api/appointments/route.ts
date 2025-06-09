@@ -149,7 +149,9 @@ export async function POST(request: Request) {
     // For public bookings, we don't require authentication
     const { searchParams } = new URL(request.url);
     const isPublicBooking = searchParams.get('public') === 'true';
-
+    
+    // En reservas públicas, no requerimos sesión de usuario
+    // En reservas privadas, verificamos que haya sesión
     if (!isPublicBooking && !session) {
       return NextResponse.json(
         { error: 'No autorizado' },
@@ -212,8 +214,11 @@ export async function POST(request: Request) {
         );
       }
     } else {
-      // For authenticated users
+      // Para usuarios autenticados
+      // Esta verificación es redundante ya que ya verificamos antes
+      // pero la mantenemos por seguridad
       if (!session) {
+        // Si llegamos aquí con isPublicBooking=false y sin sesión, algo está mal
         return NextResponse.json(
           { error: 'No autorizado: Sesión requerida' },
           { status: 401 }
@@ -279,26 +284,119 @@ export async function POST(request: Request) {
         );
       }
 
-      // Check their availability at the requested time
-      for (const therapist of availableTherapists) {
-        const existingAppointment = await prisma.appointment.findFirst({
-          where: {
-            therapistId: therapist.therapistId,
-            date: {
-              // Check for overlapping appointments (30-minute buffer)
-              gte: new Date(appointmentDate.getTime() - 30 * 60 * 1000),
-              lte: new Date(appointmentDate.getTime() + 30 * 60 * 1000),
-            },
-            status: { notIn: ['CANCELLED'] },
+      // Obtener información sobre la carga de trabajo de cada fisioterapeuta
+      // 1. Filtrar por disponibilidad en la fecha/hora requerida
+      // 2. Ordenar por menor número de citas en los próximos X días
+      const availableTherapistIds = availableTherapists.map(t => t.therapistId);
+      
+      // Primero verificamos disponibilidad en el momento exacto
+      const busyTherapists = await prisma.appointment.findMany({
+        where: {
+          therapistId: { in: availableTherapistIds },
+          date: {
+            // Verificar superposición (buffer de 30 minutos)
+            gte: new Date(appointmentDate.getTime() - 30 * 60 * 1000),
+            lte: new Date(appointmentDate.getTime() + 30 * 60 * 1000),
           },
-        });
+          status: { notIn: ['CANCELLED'] },
+        },
+        select: {
+          therapistId: true
+        }
+      });
+      
+      // Eliminar terapeutas ocupados de la lista de disponibles
+      const busyTherapistIds = busyTherapists.map(t => t.therapistId);
+      const freeTherapistIds = availableTherapistIds.filter(id => !busyTherapistIds.includes(id));
 
-        if (!existingAppointment) {
-          finalTherapistId = therapist.therapistId;
-          break;
+      if (freeTherapistIds.length === 0) {
+        return NextResponse.json(
+          { error: 'No hay fisioterapeutas disponibles en la fecha y hora seleccionada' },
+          { status: 400 }
+        );
+      }
+      
+      // Calcular la carga de trabajo de cada terapeuta disponible en los próximos 7 días
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 7); // Una semana adelante
+      
+      const nextWeekAppointments = await prisma.appointment.groupBy({
+        by: ['therapistId'],
+        where: {
+          therapistId: { in: freeTherapistIds },
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
+          status: { notIn: ['CANCELLED'] },
+        },
+        _count: {
+          id: true,
+        },
+      });
+      
+      // Crear un mapa de id terapeuta -> número de citas
+      const workloadMap = new Map<string, number>();
+      for (const t of nextWeekAppointments) {
+        // Asegurarse de que therapistId no sea null antes de usarlo como clave
+        if (t.therapistId) {
+          workloadMap.set(t.therapistId, t._count.id);
         }
       }
-
+      
+      // Asignar 0 citas a los fisioterapeutas que no tienen ninguna
+      for (const id of freeTherapistIds) {
+        if (id && !workloadMap.has(id)) { // Verificar que id no sea null
+          workloadMap.set(id, 0);
+        }
+      }
+      
+      // Ordenar terapeutas por menor carga de trabajo
+      // Convertir el Map a Array para poder ordenarlo (compatible con TS sin flags especiales)
+      const mapEntries: [string, number][] = []; 
+      workloadMap.forEach((value, key) => {
+        mapEntries.push([key, value]);
+      });
+      const sortedTherapists = mapEntries
+        .sort((a, b) => a[1] - b[1]); // Ordenar por cantidad de citas (ascendente)
+      
+      if (sortedTherapists.length > 0) {
+        // Asignar al fisioterapeuta con menor carga de trabajo
+        finalTherapistId = sortedTherapists[0][0];
+        
+        // Verificar si el terapeuta tiene horario asignado para este día de la semana
+        // Convertir de índice de día de JavaScript (0-6) a enum de Prisma (SUNDAY, MONDAY, etc.)
+        const daysOfWeek = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+        const dayOfWeek = daysOfWeek[appointmentDate.getDay()] as any; // Casting a any para resolver incompatibilidad de tipos
+        const appointmentHour = appointmentDate.getHours();
+        const appointmentMinutes = appointmentDate.getMinutes();
+        
+        // Verificar el horario del fisioterapeuta seleccionado
+        const therapistSchedule = await prisma.schedule.findFirst({
+          where: {
+            therapistId: finalTherapistId as string, // Asegurar que es string
+            dayOfWeek,
+            startTime: {
+              lte: `${appointmentHour.toString().padStart(2, '0')}:${appointmentMinutes.toString().padStart(2, '0')}`
+            },
+            endTime: {
+              gte: `${appointmentHour.toString().padStart(2, '0')}:${appointmentMinutes.toString().padStart(2, '0')}`
+            }
+          }
+        });
+        
+        // Si no tiene horario para este día/hora, verificar el siguiente con menor carga
+        if (!therapistSchedule && sortedTherapists.length > 1) {
+          finalTherapistId = sortedTherapists[1][0];
+        }
+      } else {
+        return NextResponse.json(
+          { error: 'No se pudo determinar un fisioterapeuta disponible' },
+          { status: 400 }
+        );
+      }
+      
       if (!finalTherapistId) {
         return NextResponse.json(
           { error: 'No hay fisioterapeutas disponibles en la fecha y hora seleccionada' },

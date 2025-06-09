@@ -78,27 +78,9 @@ export function Sidebar({ isSidebarOpen, toggleSidebar }: SidebarProps) {
       roles: ["ADMIN", "THERAPIST"],
     },
     {
-      name: "Mensajes",
-      href: "/dashboard/messages",
-      icon: MessageSquare,
-      roles: ["ADMIN", "THERAPIST"],
-    },
-    {
       name: "Reportes",
       href: "/dashboard/reports",
       icon: FileText,
-      roles: ["ADMIN"],
-    },
-    {
-      name: "Perfil",
-      href: "/dashboard/profile",
-      icon: User,
-      roles: ["ADMIN", "THERAPIST"],
-    },
-    {
-      name: "Configuración",
-      href: "/dashboard/settings",
-      icon: Settings,
       roles: ["ADMIN"],
     },
   ];

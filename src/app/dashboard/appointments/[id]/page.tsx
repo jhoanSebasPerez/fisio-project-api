@@ -7,7 +7,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { 
+  Tabs, 
+  TabsContent, 
+  TabsList, 
+  TabsTrigger 
+} from '@/components/ui/tabs';
+import { SurveyResponseView } from '@/components/surveys/SurveyResponseView';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -84,6 +90,7 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
   const [appointment, setAppointment] = useState<AppointmentDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasSurveyResponse, setHasSurveyResponse] = useState<boolean>(false);
   const [noteContent, setNoteContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -101,9 +108,9 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
       return;
     }
 
-    // Comprobar si el usuario es terapeuta
-    if (session?.user.role !== 'THERAPIST') {
-      setError('Solo los terapeutas pueden acceder a esta página');
+    // Comprobar si el usuario tiene permisos suficientes (terapeuta o administrador)
+    if (session?.user.role !== 'THERAPIST' && session?.user.role !== 'ADMIN') {
+      setSaveError('Solo los terapeutas y administradores pueden acceder a esta página');
       setLoading(false);
       return;
     }
@@ -131,6 +138,15 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
         // Mostrar toda la estructura de los datos para depurar
         console.log('Estructura completa de los datos:', JSON.stringify(data, null, 2));
         
+        // Verificar si hay una encuesta respondida para esta cita
+        if (data.status === 'COMPLETED') {
+          const checkResponse = await fetch(`/api/survey/${id}/check`);
+          if (checkResponse.ok) {
+            const checkData = await checkResponse.json();
+            setHasSurveyResponse(checkData.exists);
+          }
+        }
+
         // Procesar los datos para asegurar que tenemos la estructura correcta
         const appointmentDetails: AppointmentDetails = {
           id: data.id,
@@ -144,30 +160,30 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
           therapistName: data.therapist?.name || undefined,
           therapistEmail: data.therapist?.email || undefined,
           therapistPhone: data.therapist?.phone || undefined,
-          services: Array.isArray(data.appointmentServices) 
+          services: Array.isArray(data.appointmentServices)
             ? data.appointmentServices.map((as: any) => ({
-                id: as.service?.id || as.serviceId || 'unknown-id',
-                name: as.service?.name || 'Servicio sin nombre',
-                description: as.service?.description || 'Sin descripción disponible',
-                price: typeof as.service?.price === 'number' ? as.service.price : 0,
-                duration: typeof as.service?.duration === 'number' ? as.service.duration : 0
-              }))
+              id: as.service?.id || as.serviceId || 'unknown-id',
+              name: as.service?.name || 'Servicio sin nombre',
+              description: as.service?.description || 'Sin descripción disponible',
+              price: typeof as.service?.price === 'number' ? as.service.price : 0,
+              duration: typeof as.service?.duration === 'number' ? as.service.duration : 0
+            }))
             : [],
           notes: Array.isArray(data.therapistNotes)
             ? data.therapistNotes.map((note: any) => ({
-                id: note.id || 'unknown-id',
-                content: note.content || '',
-                createdAt: note.createdAt || new Date().toISOString(),
-                therapistName: note.therapist?.name || 'Terapeuta'
-              }))
+              id: note.id || 'unknown-id',
+              content: note.content || '',
+              createdAt: note.createdAt || new Date().toISOString(),
+              therapistName: note.therapist?.name || 'Terapeuta'
+            }))
             : []
         };
-        
+
         console.log('Datos formateados:', appointmentDetails);
         setAppointment(appointmentDetails);
       } catch (err) {
         console.error('Error al cargar los detalles de la cita:', err);
-        setError(`Error al cargar los detalles: ${(err as Error).message}`);
+        setSaveError(`Error al cargar los detalles: ${(err as Error).message}`);
       } finally {
         setLoading(false);
       }
@@ -262,10 +278,10 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
       setHistoryError('No se puede cargar el historial: ID de paciente no disponible');
       return;
     }
-    
+
     setLoadingHistory(true);
     setHistoryError(null);
-    
+
     try {
       const cacheBuster = new Date().getTime();
       const response = await fetch(`/api/patients/${appointment.patientId}/history?_=${cacheBuster}`, {
@@ -274,11 +290,11 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
           'Pragma': 'no-cache'
         }
       });
-      
+
       if (!response.ok) {
         throw new Error(`Error al cargar el historial: ${response.status} ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       console.log('Historial del paciente cargado:', data);
       setPatientHistory(data);
@@ -289,28 +305,27 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
       setLoadingHistory(false);
     }
   };
-  
+
   const handleCompleteAppointment = async () => {
     try {
       setIsUpdating(true);
       setUpdateMessage(null);
-      
-      // Llamamos al endpoint de la API para actualizar el estado
-      const response = await fetch(`/api/appointments/${id}`, {
-        method: 'PATCH',
+
+      // Llamamos al endpoint específico para completar citas que también envía la encuesta
+      const response = await fetch(`/api/appointments/${id}/complete`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache'
-        },
-        body: JSON.stringify({ status: 'COMPLETED' })
+        }
       });
 
       if (!response.ok) {
-        throw new Error(`Error al actualizar el estado: ${response.status}`);
+        throw new Error(`Error al completar la cita: ${response.status}`);
       }
 
       const updatedData = await response.json();
-      console.log('Cita actualizada:', updatedData);
+      console.log('Cita completada:', updatedData);
 
       // Actualizar el estado local con los datos recibidos
       if (appointment) {
@@ -318,7 +333,10 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
           ...appointment,
           status: 'COMPLETED'
         });
-        setUpdateMessage({ type: 'success', text: 'La cita ha sido marcada como completada correctamente' });
+        setUpdateMessage({
+          type: 'success',
+          text: 'La cita ha sido marcada como completada y se ha enviado una encuesta de satisfacción al paciente'
+        });
       }
     } catch (err) {
       console.error('Error al completar la cita:', err);
@@ -336,12 +354,12 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
     );
   }
 
-  if (error) {
+  if (saveError && !appointment) {
     return (
-      <div className="max-w-4xl mx-auto py-8">
-        <div className="bg-red-50 border border-red-200 p-4 rounded-md text-red-600 flex items-center gap-3">
-          <AlertCircle size={20} />
-          <p>{error}</p>
+      <div className="p-6 max-w-4xl mx-auto bg-white shadow-sm rounded-lg border">
+        <div className="p-4 mb-4 bg-red-50 text-red-800 rounded-md">
+          <h2 className="text-lg font-medium mb-2">Error</h2>
+          <p>{saveError}</p>
         </div>
       </div>
     );
@@ -368,9 +386,9 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
         <div className="flex items-center gap-3">
           {getStatusBadge(appointment.status)}
           {appointment.status !== 'COMPLETED' && appointment.status !== 'CANCELLED' && (
-            <Button 
-              variant="default" 
-              size="sm" 
+            <Button
+              variant="default"
+              size="sm"
               onClick={handleCompleteAppointment}
               disabled={isUpdating}
               className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
@@ -508,12 +526,15 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
           )}
         </div>
       </div>
-      
+
       <Tabs defaultValue="notes" className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="notes">Notas del Terapeuta</TabsTrigger>
           <TabsTrigger value="history">Historial del Paciente</TabsTrigger>
           <TabsTrigger value="therapist">Información del Terapeuta</TabsTrigger>
+          {appointment.status === 'COMPLETED' && hasSurveyResponse && (
+            <TabsTrigger value="survey">Encuesta de Satisfacción</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="notes">
@@ -586,10 +607,10 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
                 <CardDescription>Historial completo de atenciones previas</CardDescription>
               </div>
               {!patientHistory && !loadingHistory && !historyError && appointment?.patientEmail && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => loadPatientHistory()} 
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadPatientHistory()}
                   className="flex items-center gap-2"
                 >
                   <FileText className="w-4 h-4" />
@@ -632,7 +653,7 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Estadísticas */}
                   <div>
                     <h3 className="font-medium mb-3">Estadísticas del paciente</h3>
@@ -646,22 +667,22 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
                       <div className="bg-purple-50 p-4 rounded-md">
                         <p className="text-purple-600 text-sm">Primera visita</p>
                         <p className="text-md font-medium text-purple-800">
-                          {patientHistory.statistics.firstVisit ? 
-                            new Date(patientHistory.statistics.firstVisit).toLocaleDateString() : 
+                          {patientHistory.statistics.firstVisit ?
+                            new Date(patientHistory.statistics.firstVisit).toLocaleDateString() :
                             'N/A'}
                         </p>
                       </div>
                       <div className="bg-amber-50 p-4 rounded-md">
                         <p className="text-amber-600 text-sm">Última visita</p>
                         <p className="text-md font-medium text-amber-800">
-                          {patientHistory.statistics.lastVisit ? 
-                            new Date(patientHistory.statistics.lastVisit).toLocaleDateString() : 
+                          {patientHistory.statistics.lastVisit ?
+                            new Date(patientHistory.statistics.lastVisit).toLocaleDateString() :
                             'N/A'}
                         </p>
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Servicios recibidos */}
                   <div>
                     <h3 className="font-medium mb-3">Servicios recibidos previamente</h3>
@@ -674,7 +695,7 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
                       ))}
                     </div>
                   </div>
-                  
+
                   {/* Historial de citas y notas */}
                   <div>
                     <h3 className="font-medium mb-3">Historial de citas y notas</h3>
@@ -707,7 +728,7 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
                                   ))}
                                 </div>
                               </div>
-                              
+
                               {/* Notas de la cita */}
                               {app.therapistNotes.length > 0 && (
                                 <div>
@@ -745,7 +766,7 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
             </CardContent>
           </Card>
         </TabsContent>
-        
+
         <TabsContent value="therapist">
           <Card>
             <CardHeader>
@@ -771,7 +792,7 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
                   <div className="mt-4 p-4 bg-gray-50 border rounded-md">
                     <h3 className="font-medium mb-2">Información para el paciente</h3>
                     <p className="text-sm text-gray-600">
-                      Este profesional está asignado para atender la cita programada. 
+                      Este profesional está asignado para atender la cita programada.
                       Si necesita reprogramar o tiene preguntas, puede contactarles directamente.
                     </p>
                   </div>
@@ -785,21 +806,23 @@ export default function AppointmentDetailsPage({ params }: AppointmentPageProps)
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
 
-      {/* Acciones disponibles según el estado de la cita */}
-      <div className="mt-6 flex justify-end gap-3">
-        <Button variant="outline" onClick={() => router.back()}>
-          Volver
-        </Button>
-
-        {appointment.status !== 'COMPLETED' && appointment.status !== 'CANCELLED' && (
-          <Button onClick={handleCompleteAppointment}>
-            <CheckCircle className="mr-2 h-4 w-4" />
-            Marcar como Completada
-          </Button>
+        {appointment.status === 'COMPLETED' && hasSurveyResponse && (
+          <TabsContent value="survey">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Resultados de la Encuesta de Satisfacción</CardTitle>
+                <CardDescription>
+                  Respuestas del paciente sobre su experiencia con el servicio
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SurveyResponseView appointmentId={id} />
+              </CardContent>
+            </Card>
+          </TabsContent>
         )}
-      </div>
+      </Tabs>
     </div>
   );
 }

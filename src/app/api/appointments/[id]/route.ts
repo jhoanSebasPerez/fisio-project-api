@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { Session } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { emailService } from '@/lib/email/service';
 
 // Extender el tipo Session para incluir los campos personalizados
 interface ExtendedSession extends Session {
@@ -133,6 +134,45 @@ export async function PATCH(
         },
       }
     });
+    
+    // Si la cita se marca como completada, enviar encuesta de satisfacción
+    if (status === 'COMPLETED' && updatedAppointment.patient?.email) {
+      try {
+        // Registrar la actividad de envío de encuesta
+        await prisma.appointmentActivityLog.create({
+          data: {
+            appointmentId,
+            action: 'SURVEY_EMAIL_SENT',
+            userId: session.user.id,
+            newStatus: 'COMPLETED',  // Campo requerido según el modelo
+            metadata: {
+              triggeredBy: session.user.name || session.user.email
+            },
+            userAgent: request.headers.get('user-agent') || '',
+            ipAddress: request.headers.get('x-forwarded-for') || '',
+          }
+        });
+        
+        // Preparar datos para el correo
+        const services = updatedAppointment.appointmentServices.map(as => as.service.name);
+        
+        // Enviar el correo con la encuesta
+        await emailService.sendSatisfactionSurvey({
+          id: appointmentId,
+          appointmentId: appointmentId,
+          patientName: updatedAppointment.patient.name || 'Paciente',
+          patientEmail: updatedAppointment.patient.email,
+          date: updatedAppointment.date,
+          therapistName: updatedAppointment.therapist?.name,
+          services: services
+        });
+        
+        console.log(`Encuesta de satisfacción enviada para la cita ${appointmentId}`);
+      } catch (emailError) {
+        // Solo registrar el error pero no interrumpir la actualización de estado
+        console.error('Error al enviar encuesta de satisfacción:', emailError);
+      }
+    }
 
     return NextResponse.json(updatedAppointment);
   } catch (error) {

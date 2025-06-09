@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { Schedule, ScheduleFilters } from '@/types/schedule';
 import { toast } from '@/components/ui/use-toast';
 
@@ -10,9 +11,18 @@ import CreateScheduleForm from '@/components/dashboard/schedules/CreateScheduleF
 import { CalendarDays, PlusCircle, Filter, ListFilter } from 'lucide-react';
 
 export default function SchedulesPage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === 'ADMIN';
+  const isTherapist = session?.user?.role === 'THERAPIST';
+  
+  // Si el usuario es fisioterapeuta, preestablecemos el filtro con su ID
+  const initialFilters: ScheduleFilters = isTherapist 
+    ? { therapistId: session?.user?.id } 
+    : {};
+  
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [filteredSchedules, setFilteredSchedules] = useState<Schedule[]>([]);
-  const [filters, setFilters] = useState<ScheduleFilters>({});
+  const [filters, setFilters] = useState<ScheduleFilters>(initialFilters);
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState<'list' | 'create'>('list'); // Para dispositivos móviles
 
@@ -20,7 +30,12 @@ export default function SchedulesPage() {
     setIsLoading(true);
     try {
       const queryParams = new URLSearchParams();
-      if (filters.therapistId) {
+      
+      // Si el usuario es terapeuta, siempre filtrar por su ID
+      // Si es admin, usar el filtro seleccionado
+      if (isTherapist) {
+        queryParams.append('therapistId', session?.user?.id || '');
+      } else if (filters.therapistId) {
         queryParams.append('therapistId', filters.therapistId);
       }
       
@@ -50,9 +65,11 @@ export default function SchedulesPage() {
   };
 
   useEffect(() => {
-    fetchSchedules();
+    if (session) {
+      fetchSchedules();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.therapistId]);
+  }, [filters.serviceId, filters.dayOfWeek, session]);
 
   const applyFilters = (schedulesData: Schedule[]) => {
     let filtered = [...schedulesData];
@@ -65,14 +82,14 @@ export default function SchedulesPage() {
   };
 
   const handleFilterChange = (newFilters: ScheduleFilters) => {
-    setFilters(newFilters);
-    
-    if (newFilters.therapistId !== filters.therapistId) {
-      // Si cambia el terapeuta, cargar nuevos horarios desde el servidor
-      // (esto se maneja en el useEffect)
+    // Para fisioterapeutas, asegúrate de mantener su ID en los filtros
+    if (isTherapist) {
+      setFilters({
+        ...newFilters,
+        therapistId: session?.user?.id
+      });
     } else {
-      // Si solo cambia el día, aplicar el filtro localmente
-      applyFilters(schedules);
+      setFilters(newFilters);
     }
   };
 
@@ -100,19 +117,19 @@ export default function SchedulesPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-1">
           <CalendarDays size={24} className="text-blue-600" />
-          <h1 className="text-2xl font-bold text-slate-800">Gestión de Horarios</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Horarios</h1>
         </div>
-        <div className="text-sm text-gray-500">
-          Asigna horarios y servicios disponibles para cada fisioterapeuta
-        </div>
+        <p className="text-sm text-gray-500 ml-8">
+          {isAdmin ? 'Gestiona los horarios y servicios de todos los fisioterapeutas' : 'Consulta tus horarios asignados'}
+        </p>
       </div>
 
       {/* Vista para pantallas medianas y grandes */}
-      <div className="hidden md:grid md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-6">
+      <div className={`hidden md:grid ${isAdmin ? 'md:grid-cols-3' : 'md:grid-cols-1'} gap-6`}>
+        <div className={`${isAdmin ? 'md:col-span-2' : ''} space-y-6`}>
           <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
             <div className="flex items-center gap-2 text-lg font-medium text-gray-700 mb-4">
               <Filter size={18} />
@@ -132,12 +149,14 @@ export default function SchedulesPage() {
           />
         </div>
 
-        <div>
-          <CreateScheduleForm 
-            onScheduleCreated={handleScheduleCreated}
-            therapistId={filters.therapistId}
-          />
-        </div>
+        {isAdmin && (
+          <div>
+            <CreateScheduleForm 
+              onScheduleCreated={handleScheduleCreated}
+              therapistId={filters.therapistId}
+            />
+          </div>
+        )}
       </div>
 
       {/* Vista para pantallas móviles con botones de cambio */}
@@ -151,13 +170,15 @@ export default function SchedulesPage() {
             <ListFilter size={18} />
             Ver Horarios
           </button>
-          <button 
-            className={`flex-1 py-3 px-4 flex justify-center items-center gap-2 ${activeView === 'create' ? 'bg-blue-50 text-blue-700 font-medium' : 'bg-white text-gray-600'}`}
-            onClick={() => setActiveView('create')}
-          >
-            <PlusCircle size={18} />
-            Añadir Nuevo
-          </button>
+          {isAdmin && (
+            <button 
+              className={`flex-1 py-3 px-4 flex justify-center items-center gap-2 ${activeView === 'create' ? 'bg-blue-50 text-blue-700 font-medium' : 'bg-white text-gray-600'}`}
+              onClick={() => setActiveView('create')}
+            >
+              <PlusCircle size={18} />
+              Añadir Nuevo
+            </button>
+          )}
         </div>
 
         {/* Contenido según la vista activa */}
@@ -178,7 +199,7 @@ export default function SchedulesPage() {
           </div>
         )}
 
-        {activeView === 'create' && (
+        {activeView === 'create' && isAdmin && (
           <CreateScheduleForm 
             onScheduleCreated={() => {
               handleScheduleCreated();
