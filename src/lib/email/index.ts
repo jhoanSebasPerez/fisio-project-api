@@ -6,8 +6,8 @@ import { es } from 'date-fns/locale';
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_SERVER_USER,
-    pass: process.env.EMAIL_SERVER_PASSWORD,
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
   },
 });
 
@@ -68,7 +68,7 @@ export async function sendTherapistAccountCreation({ to, therapist, resetLink }:
 
   try {
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
+      from: process.env.GMAIL_USER,
       to,
       subject: 'Activación de Cuenta - Clínica de Fisioterapia',
       html,
@@ -128,7 +128,7 @@ export async function sendAppointmentConfirmation({ to, appointment, patient }: 
 
   try {
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
+      from: process.env.GMAIL_USER,
       to,
       subject: 'Confirmación de Cita - Clínica de Fisioterapia',
       html,
@@ -188,7 +188,7 @@ export async function sendAppointmentReminder({ to, appointment, patient }: Emai
 
   try {
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
+      from: process.env.GMAIL_USER,
       to,
       subject: 'Recordatorio de Cita - Clínica de Fisioterapia',
       html,

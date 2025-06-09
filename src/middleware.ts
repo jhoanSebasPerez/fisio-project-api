@@ -9,14 +9,19 @@ export async function middleware(request: NextRequest) {
     '/api/patients'
   ];
   
-  // Verificar si la solicitud es una reserva pública de cita
+  // Verificar si la solicitud es una reserva pública de cita o una confirmación de cita
   const isPublicAppointmentRequest = 
     request.nextUrl.pathname === '/api/appointments' && 
     request.nextUrl.searchParams.get('public') === 'true' &&
     request.method === 'POST';
+    
+  // Verificar si es una solicitud para confirmar una cita
+  const isAppointmentConfirmRequest = 
+    request.nextUrl.pathname.match(/\/api\/appointments\/[\w-]+\/confirm/) &&
+    request.method === 'POST';
 
-  // Permitir solicitudes públicas de citas sin autenticación
-  if (isPublicAppointmentRequest) {
+  // Permitir solicitudes públicas de citas y confirmaciones sin autenticación
+  if (isPublicAppointmentRequest || isAppointmentConfirmRequest) {
     return NextResponse.next();
   }
   

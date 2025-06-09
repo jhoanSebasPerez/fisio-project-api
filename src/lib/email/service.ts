@@ -29,8 +29,15 @@ export const emailService = {
    */
   async sendAppointmentReminder(appointmentData: AppointmentReminderData) {
     try {
+      // Validación de datos requeridos
+      if (!appointmentData.patientEmail || !appointmentData.patientName) {
+        console.error('Datos de paciente insuficientes para el correo');
+        return { success: false, error: 'Datos de paciente insuficientes' };
+      }
+
+      console.log('Iniciando envío de correo a:', appointmentData.patientEmail);
       const transporter = await createTransporter();
-      
+
       // Generar el contenido del correo
       const { subject, html } = generateAppointmentReminderEmail({
         id: appointmentData.id,
@@ -40,21 +47,42 @@ export const emailService = {
         therapistName: appointmentData.therapistName,
         location: appointmentData.location
       });
-      
-      // Enviar el correo
-      const info = await transporter.sendMail({
+
+      // Preparar datos del correo
+      const mailOptions = {
         from: getEmailSender(),
         to: appointmentData.patientEmail,
         subject,
         html
-      });
-      
-      // Solo en desarrollo (ethereal.email), mostrar URL para ver el correo
-      if (process.env.NODE_ENV !== 'production' && info.messageId) {
-        console.log('Vista previa del correo:', nodemailer.getTestMessageUrl(info));
+      };
+
+      console.log('Enviando correo con remitente:', mailOptions.from);
+
+      // Enviar el correo con reintentos
+      let attempts = 0;
+      const maxAttempts = 3;
+      let lastError;
+
+      while (attempts < maxAttempts) {
+        try {
+          attempts++;
+          const info = await transporter.sendMail(mailOptions);
+          console.log(`Correo enviado exitosamente (intento ${attempts}): ID=${info.messageId}`);
+
+          return { success: true, messageId: info.messageId };
+        } catch (err) {
+          lastError = err;
+          console.error(`Error al enviar correo (intento ${attempts}/${maxAttempts}):`, err);
+
+          // Esperar antes del siguiente intento
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+          }
+        }
       }
-      
-      return { success: true, messageId: info.messageId };
+
+      console.error('Fallaron todos los intentos de envío de correo');
+      return { success: false, error: lastError };
     } catch (error) {
       console.error('Error al enviar correo de recordatorio:', error);
       return { success: false, error };
@@ -67,18 +95,19 @@ export const emailService = {
   async sendSatisfactionSurvey(surveyData: SurveyData) {
     try {
       console.log('Iniciando envío de encuesta de satisfacción...');
-      
-      if (!surveyData.patientEmail) {
-        console.error('Error: No se puede enviar la encuesta sin un correo electrónico de destinatario');
-        return { 
-          success: false, 
-          error: 'Correo electrónico del paciente no proporcionado' 
+
+      // Validación de datos requeridos
+      if (!surveyData.patientEmail || !surveyData.patientName) {
+        console.error('Error: Datos insuficientes para enviar la encuesta');
+        return {
+          success: false,
+          error: 'Datos insuficientes para enviar encuesta'
         };
       }
-      
-      console.log('Creando transporter para encuesta...');
+
+      console.log('Creando transporter para encuesta para:', surveyData.patientEmail);
       const transporter = await createTransporter();
-      
+
       // Generar el contenido del correo
       console.log('Generando contenido de la encuesta...');
       const { subject, html } = generateSatisfactionSurveyEmail({
@@ -89,47 +118,62 @@ export const emailService = {
         services: surveyData.services || ['Fisioterapia'],
         appointmentId: surveyData.appointmentId
       });
-      
-      // Mostrar detalles del correo a enviar
-      console.log(`Enviando encuesta a ${surveyData.patientEmail} para la cita ${surveyData.appointmentId}`);
-      
-      // Enviar el correo
-      const info = await transporter.sendMail({
+
+      // Preparar datos del correo
+      console.log(`Preparando encuesta para ${surveyData.patientEmail} (cita ${surveyData.appointmentId})`);
+
+      const mailOptions = {
         from: getEmailSender(),
         to: surveyData.patientEmail,
         subject,
         html
-      });
-      
-      // Solo en desarrollo (ethereal.email), mostrar URL para ver el correo
-      if (info.messageId) {
-        if (nodemailer.getTestMessageUrl && typeof nodemailer.getTestMessageUrl === 'function') {
-          try {
-            const previewUrl = nodemailer.getTestMessageUrl(info);
-            if (previewUrl) {
-              console.log('Vista previa de encuesta:', previewUrl);
-            }
-          } catch (previewError) {
-            console.log('No se pudo generar vista previa del correo, pero fue enviado correctamente');
+      };
+
+      console.log('Enviando correo con remitente:', mailOptions.from);
+
+      // Enviar el correo con reintentos
+      let attempts = 0;
+      const maxAttempts = 3;
+      let lastError;
+
+      while (attempts < maxAttempts) {
+        try {
+          attempts++;
+          console.log(`Intento ${attempts}/${maxAttempts} para enviar encuesta a ${surveyData.patientEmail}`);
+
+          const info = await transporter.sendMail(mailOptions);
+          console.log(`Encuesta enviada correctamente (intento ${attempts}) con ID ${info.messageId}`);
+
+          return {
+            success: true,
+            messageId: info.messageId,
+            destinatario: surveyData.patientEmail,
+            asunto: subject
+          };
+        } catch (err) {
+          lastError = err;
+          console.error(`Error al enviar encuesta (intento ${attempts}/${maxAttempts}):`, err);
+
+          // Esperar antes del siguiente intento (espera progresiva)
+          if (attempts < maxAttempts) {
+            const waitTime = 1000 * attempts;
+            console.log(`Esperando ${waitTime}ms antes del siguiente intento...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
           }
         }
-        
-        console.log('Encuesta enviada exitosamente con ID:', info.messageId);
       }
-      
-      return { 
-        success: true, 
-        messageId: info.messageId,
-        previewUrl: process.env.NODE_ENV !== 'production' ? nodemailer.getTestMessageUrl?.(info) : undefined,
-        destinatario: surveyData.patientEmail,
-        asunto: subject
+
+      console.error('Fallaron todos los intentos de envío de encuesta');
+      return {
+        success: false,
+        error: lastError instanceof Error ? lastError.message : 'Error desconocido al enviar la encuesta'
       };
     } catch (error) {
-      console.error('Error al enviar encuesta de satisfacción:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Error desconocido al enviar la encuesta', 
-        stack: error instanceof Error ? error.stack : undefined 
+      console.error('Error general al procesar el envío de encuesta:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Error desconocido al enviar la encuesta',
+        stack: error instanceof Error ? error.stack : undefined
       };
     }
   }

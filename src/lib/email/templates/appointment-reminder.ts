@@ -103,7 +103,7 @@ export const generateAppointmentReminderEmail = (appointment: AppointmentDetails
     <p>Por favor, confirma tu asistencia o reprograma tu cita si es necesario:</p>
     
     <div style="text-align: center; margin: 25px 0;">
-      <a href="${baseUrl}/appointments/${appointment.id}/confirm" class="button" style="background-color: #10B981; margin-right: 10px;">Confirmar cita</a>
+      <a href="${baseUrl}/appointments/confirm/${appointment.id}" class="button" style="background-color: #10B981; margin-right: 10px;">Confirmar cita</a>
       <a href="${baseUrl}/appointments/${appointment.id}/reschedule" class="button" style="background-color: #F59E0B;">Reprogramar</a>
     </div>
     

@@ -118,10 +118,13 @@ export async function POST(
     console.log('Fecha de la Cita:', appointment.date);
     console.log('Terapeuta:', appointment.therapist?.name);
     
+    // Inicializar la variable fuera del bloque try-catch para evitar problemas de tipo
+    let emailResult: { success: boolean; messageId?: string; error?: any; } | undefined;
+    
     try {
       // Enviar correo electrónico con la encuesta
       console.log('Intentando enviar correo de encuesta...');
-      const emailResult = await emailService.sendSatisfactionSurvey({
+      emailResult = await emailService.sendSatisfactionSurvey({
         id: surveyId,
         appointmentId: appointment.id,
         patientName: appointment.patient.name,
@@ -132,13 +135,14 @@ export async function POST(
       });
       
       console.log('Resultado del envío de correo:', JSON.stringify(emailResult, null, 2));
-      
-      if (!emailResult.success) {
-        console.error('Error al enviar la encuesta:', emailResult.error);
-      }
     } catch (emailError) {
       console.error('Excepción al enviar el correo de encuesta:', emailError);
       // No lanzamos el error para permitir que el resto del proceso continue
+    }
+    
+    // Verificar el resultado del correo fuera del try-catch
+    if (emailResult && !emailResult.success) {
+      console.error('Error al enviar la encuesta:', emailResult.error);
     }
     
     try {
