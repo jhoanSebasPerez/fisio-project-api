@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Make sure this path is correct
+import { authOptions } from '@/lib/auth'; // Make sure this path is correct
 import { Role } from '@prisma/client'; // Or your Role enum definition path
 import { generateRandomPassword } from '@/lib/utils/password';
 import { generateResetToken } from '@/lib/utils/token';

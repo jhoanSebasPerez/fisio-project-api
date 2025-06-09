@@ -131,7 +131,13 @@ export default function SurveysAdminPage() {
   const handlePageChange = (newPage: number) => {
     if (newPage < 1 || newPage > totalPages) return
     
-    const params = new URLSearchParams(searchParams)
+    // Convertir ReadonlyURLSearchParams a objeto para evitar el error de tipo
+    const paramsObj: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      paramsObj[key] = value;
+    });
+    
+    const params = new URLSearchParams(paramsObj)
     params.set('page', newPage.toString())
     router.push(`/admin/surveys?${params.toString()}`)
   }
